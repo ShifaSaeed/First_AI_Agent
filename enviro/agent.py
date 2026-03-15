@@ -1,84 +1,135 @@
+import streamlit as st
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import json
 
+# --- CONFIGURATION & SETUP ---
 load_dotenv()
-api_key=os.getenv("GEMINI_API_KEY")
+if "GEMENI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
+else:
+    api_key = os.getenv("GEMINI_API_KEY")
+
 
 FILE_NAME = "chat_memory.json"
 
-def load_data():
-    if os.path.exists(FILE_NAME):
-        if os.path.getsize(FILE_NAME) > 0:
-            with open(FILE_NAME, "r") as f:
-                return json.load(f)
-        return[]
-    
-def save_data(chat_history):
-    new_memory=[]
-    for message in chat_history:
-        message_text = message.parts[0].text
-        new_memory.append({
-            "role":message.role,
-            "parts":[{
-                "text":message_text
-            }]
-        })
-        
-        with open(FILE_NAME, "w") as diary:
-            json.dump(new_memory,diary,indent=4)
-            
-    
+st.set_page_config(page_title="PathFinder AI", page_icon="🚀", layout="wide")
 
+# --- DATA PERSISTENCE LOGIC ---
+def load_data():
+    if os.path.exists(FILE_NAME) and os.path.getsize(FILE_NAME) > 0:
+        with open(FILE_NAME, "r") as f:
+            return json.load(f)
+    return []
+
+def save_data(chat_history):
+    new_memory = []
+    for message in chat_history:
+        # Streamlit history and Gemini history have slightly different structures
+        # We ensure compatibility here
+        new_memory.append({
+            "role": message["role"],
+            "parts": [{"text": message["content"]}]
+        })
+    with open(FILE_NAME, "w") as diary:
+        json.dump(new_memory, diary, indent=4)
+
+# --- GEMINI AI SETUP ---
 genai.configure(api_key=api_key)
 
-instrutions = """You are Pathfinder, a specialized AI Career Architect. Your mission is to empower students by providing clear career guidance, suggesting high-demand skills, and mapping out professional journeys while tracking their progress.
+instructions = """
+Role:
+You are 'PathFinder', a wise, professional, and adaptive AI Career Architect.
 
-Operational Guidelines:
+Core Logic - Adaptive Goal Management:
+1. FLEXIBILITY: You are not locked into one career path. If a user was discussing Data Science but now wants to learn React or Graphic Design, ADAPT immediately.
+2. TRANSITION GUIDANCE: When a user changes their goal:
+   - ACKNOWLEDGE the change politely.
+   - COUNSEL: Briefly compare the two paths if they are related (e.g., "Moving from Data Science to React means shifting from Analysis to Building interfaces").
+   - PERSUADE/ADVISE: If their previous goal was highly promising or they had made great progress, gently mention it (e.g., "You were doing great in Data Science, are you sure you want to pivot?").
+   - RESPECT: If the user insists on the new path, accept it enthusiastically and build the new roadmap.
+3. MEMORY AWARENESS: Use past context to help the current goal, but never let past context block a new request.
 
-Task Tracking & Accountability: 📝 Every time a user returns or asks for new advice, first ask if they have completed the previous task or "action item" you suggested. Encourage them if they did, and troubleshoot if they struggled.
+Mission & Scope:
+1. Provide roadmaps for ANY professional field (Tech, Medical, Arts, Business, etc.).
+2. STRICT BOUNDARY: Refuse only non-career topics (jokes, weather, cooking).
 
-Strict Scope: Only answer questions related to careers, education, skills, and professional development. 🧭
+Response Style:
+1. Use **Bold Headings** and Bullet Points.
+2. TABLES: Every roadmap must have a Markdown Table: [Phase | Action Item | Estimated Time].
+3. Ask about the "Previous Task" progress to maintain accountability.
 
-Simplicity & Clarity: Avoid complex language. Keep explanations beginner-friendly and easy to digest.
+Persona:
+- Act like a senior mentor who wants the best for the student but respects their freedom to choose.
+- Use relevant emojis based on the current field being discussed.
+"""
+# Initialize Model
+model = genai.GenerativeModel(
+    model_name='gemini-2.5-flash-lite', # Updated to latest stable version
+    system_instruction=instructions
+)
 
-Conciseness & No Repetition: Be direct. Do not repeat the same advice multiple times in a single response. ⏱️
+# --- STREAMLIT UI COMPONENTS ---
 
-Formatting: * Use Tables for comparing career paths or tools.
+# Sidebar for Branding & Controls
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=100) # Professional Robot Icon
+    st.title("PathFinder AI")
+    st.subheader("Your Career Architect")
+    st.markdown("---")
+    st.write("Specialized in guiding your professional journey with precision and motivation.")
+    
+    if st.button("🗑️ Clear Chat History"):
+        if os.path.exists(FILE_NAME):
+            os.remove(FILE_NAME)
+        st.session_state.messages = []
+        st.rerun()
 
-Use Bullet points for step-by-step roadmaps.
+# Main UI Header
+st.title("🚀 Career Roadmap & Guidance")
+st.caption("Strategic planning for your professional future.")
 
-Use Bold text for key skills.
+# Initialize Session State for Chat
+if "messages" not in st.session_state:
+    saved_history = load_data()
+    # Convert saved JSON format to Streamlit format
+    st.session_state.messages = []
+    for msg in saved_history:
+        st.session_state.messages.append({
+            "role": "assistant" if msg["role"] == "model" else "user",
+            "content": msg["parts"][0]["text"]
+        })
 
-Resource Integration: Always provide relevant links (e.g., Coursera, Udemy, YouTube) when suggesting skills. 🔗
+# Display Chat History
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-Tone & Personality: Maintain an encouraging, empathetic, and professional tone. Use relevant emojis (✨, 🚀, 💻) to keep it engaging.
+# --- CHAT LOGIC ---
+if prompt := st.chat_input("Ask about your career roadmap..."):
+    # Add user message to state
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-Response Framework:
-
-Check-in: Ask about the status of the last suggested task.
-
-Acknowledge: Validate the user's current query.
-
-The Roadmap (Table/List): Breakdown the steps, skills, and links.
-
-Action Item: End by giving them ONE specific task to complete before the next chat."""
-
-model = genai.GenerativeModel(model_name='gemini-2.5-flash-lite', system_instruction=instrutions)
-
-memory = load_data()
-chat = model.start_chat(history=memory)
-
-print("----Your personal career mentor is online (Type 'exit or bye' to stop)-----------")
-
-while True:
-    user_input = input("You:")
-
-    if user_input in ["exit","bye","quit"]:
-        save_data(chat.history)
-        print("Progress saved! GoodBye! See you tommorow")
-        break
-
-    response = chat.send_message(user_input)
-    print("Agent:",response.text)
+    # Generate AI Response
+    with st.chat_message("assistant"):
+        with st.spinner("PathFinder is analyzing your career path..."):
+            # Prepare history for Gemini API
+            history_for_gemini = [
+                {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+                for m in st.session_state.messages[:-1]
+            ]
+            
+            chat_session = model.start_chat(history=history_for_gemini)
+            try:
+                response = chat_session.send_message(prompt)
+                full_response = response.text
+                st.markdown(full_response)
+                
+                # Add to state and save to file
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                save_data(st.session_state.messages)
+            except Exception as e:
+                st.error(f"Error: {e}")
