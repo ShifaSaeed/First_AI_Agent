@@ -6,7 +6,7 @@ import json
 
 # --- CONFIGURATION & SETUP ---
 load_dotenv()
-if "GEMENI_API_KEY" in st.secrets:
+if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 else:
     api_key = os.getenv("GEMINI_API_KEY")
